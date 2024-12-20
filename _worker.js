@@ -205,6 +205,7 @@ export default {
 		const hostTop = hostname.split('.')[0]; // 获取主机名的第一部分
 
 		let checkHost; // 在这里定义 checkHost 变量
+		
 		// 如果存在 ns 参数，优先使用它来确定 hub_host
 		if (ns) {
 			if (ns === 'docker.io') {
@@ -284,6 +285,73 @@ export default {
 
 			return fetch(newRequest);
 		}
+		// 在 fetch 函数中添加 NVIDIA NGC 认证处理  
+		if (hub_host === 'nvcr.io') {  
+		    // 修改请求头以处理 NVIDIA NGC 认证  
+		    parameter.headers = {  
+		        ...parameter.headers,  
+		        'Docker-Distribution-Api-Version': 'registry/2.0',  
+		    };  
+		
+		    // 如果是认证请求  
+		    if (url.pathname.includes('/token')) {  
+		        const newUrl = new URL('https://nvcr.io/token');  
+		        newUrl.search = url.search;  
+		        return fetch(new Request(newUrl, {  
+		            method: request.method,  
+		            headers: parameter.headers  
+		        }));  
+		    }  
+		}
+		// 添加 NVIDIA NGC 处理逻辑  
+	        if (hub_host === 'nvcr.io') {  
+	            // 确保正确处理 NVIDIA NGC 的路径  
+	            if (!url.pathname.startsWith('/v2/')) {  
+	                url.pathname = '/v2' + url.pathname;  
+	            }  
+	
+	            // 构造请求参数  
+	            let parameter = {  
+	                headers: {  
+	                    'Host': hub_host,  
+	                    'User-Agent': getReqHeader("User-Agent"),  
+	                    'Accept': getReqHeader("Accept"),  
+	                    'Accept-Language': getReqHeader("Accept-Language"),  
+	                    'Accept-Encoding': getReqHeader("Accept-Encoding"),  
+	                    'Connection': 'keep-alive',  
+	                    'Cache-Control': 'max-age=0',  
+	                    'Docker-Distribution-Api-Version': 'registry/2.0'  
+	                }  
+	            };  
+	
+	            // 添加 Authorization 头  
+	            if (request.headers.has("Authorization")) {  
+	                parameter.headers.Authorization = getReqHeader("Authorization");  
+	            }  
+	
+	            // 处理请求  
+	            let response = await fetch(new Request(url, request), parameter);  
+	            let responseHeaders = new Headers(response.headers);  
+	
+	            // 修改认证头  
+	            if (responseHeaders.get('Www-Authenticate')) {  
+	                let auth = responseHeaders.get('Www-Authenticate');  
+	                responseHeaders.set('Www-Authenticate',   
+	                    auth.replace('nvcr.io', url.hostname)  
+	                        .replace('https://nvcr.io/token',   
+	                                `${workers_url}/token`));  
+	            }  
+	
+	            // 处理重定向  
+	            if (responseHeaders.get("Location")) {  
+	                return httpHandler(request, responseHeaders.get("Location"));  
+	            }  
+	
+	            return new Response(response.body, {  
+	                status: response.status,  
+	                headers: responseHeaders  
+	            });  
+	        }  
 
 		// 修改包含 %2F 和 %3A 的请求
 		if (!/%2F/.test(url.search) && /%3A/.test(url.toString())) {
